@@ -1,0 +1,79 @@
+---
+
+---
+
+<div id="canvas-container"></div>
+
+<script>
+  import * as THREE from 'three'
+
+  let camera: THREE.PerspectiveCamera
+  let scene: THREE.Scene
+  let renderer: THREE.WebGLRenderer
+  let mesh: THREE.Mesh
+
+  init()
+
+  function init() {
+    const aspect = window.innerWidth / window.innerHeight
+    const screenwidth = 1 * aspect
+    const screenheight = 1
+    const fov = 50
+    camera = new THREE.PerspectiveCamera(fov, aspect, 0.1, 100)
+    const newz = 0.5 / Math.tan(((fov / 2.0) * Math.PI) / 180.0)
+    camera.position.z = newz
+    scene = new THREE.Scene()
+
+    const letters = 'houseofgod'.split('')
+    const objects = []
+    const letterheight = screenheight / 2
+    const letterwidth = screenwidth / 5
+    const firstrow = screenheight / 2 - letterheight / 2
+    const secondrow = firstrow - letterheight
+
+    letters.forEach((letter, index) => {
+      console.log(letter)
+      console.log(index)
+      console.log('----')
+      const texture = new THREE.TextureLoader().load(`src/components/${letter}.jpg`)
+      texture.colorSpace = THREE.SRGBColorSpace
+      const geometry = new THREE.PlaneGeometry(letterwidth, letterheight)
+      const material = new THREE.MeshBasicMaterial({ map: texture })
+      mesh = new THREE.Mesh(geometry, material)
+      scene.add(mesh)
+      objects.push(mesh)
+      mesh.position.x = -(screenwidth / 2) + letterwidth * (index % 5) + letterwidth / 2
+      mesh.position.y = index <= 4 ? firstrow : secondrow
+    })
+
+    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
+    renderer.setPixelRatio(window.devicePixelRatio)
+    renderer.setSize(window.innerWidth, window.innerHeight)
+    renderer.setAnimationLoop(animate)
+    const canvas = document.querySelector('#canvas-container')!
+    canvas.appendChild(renderer.domElement)
+
+    window.addEventListener('resize', onWindowResize)
+  }
+
+  function onWindowResize() {
+    camera.aspect = window.innerWidth / window.innerHeight
+    camera.updateProjectionMatrix()
+
+    renderer.setSize(window.innerWidth, window.innerHeight)
+  }
+
+  function animate() {
+    // mesh.rotation.x += 0.005
+    // mesh.rotation.y += 0.01
+    renderer.render(scene, camera)
+  }
+</script>
+
+<style>
+  #canvas-container {
+    position: fixed;
+    width: 100%;
+    height: 100%;
+  }
+</style>

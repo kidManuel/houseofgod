@@ -49,9 +49,9 @@
     return 1 - Math.pow(1 - x, 4)
   }
 
-  const xyToIndex = (x: number, y: number): number => {
-    return y * 5 + x
-  }
+  // const xyToIndex = (x: number, y: number): number => {
+  //   return y * 5 + x
+  // }
 
   const indexToXy = (index: number): [number, number] => {
     return [index % 5, index <= 4 ? 0 : 1]

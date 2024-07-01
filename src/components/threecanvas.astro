@@ -7,17 +7,146 @@
 <script>
   import * as THREE from 'three'
 
+  type enrichedMesh = THREE.Mesh<THREE.PlaneGeometry> & {
+    _order: THREE.Vector2Tuple
+    _letter: string
+    _targetScale: THREE.Vector3
+    _targetPos: THREE.Vector3
+  }
+
   let camera: THREE.PerspectiveCamera
   let scene: THREE.Scene
   let renderer: THREE.WebGLRenderer
-  let mesh: THREE.Mesh
+  let raycaster: THREE.Raycaster
+  const clock = new THREE.Clock()
+  const mouse = new THREE.Vector2()
+  let mouseInScreen = false
+  const objects: enrichedMesh[] = []
 
-  init()
+  let intersect: enrichedMesh
+  const TRANS_DURATION = 0.7
+  let transitionProgress: number = 2
 
-  function init() {
-    const aspect = window.innerWidth / window.innerHeight
-    const screenwidth = 1 * aspect
-    const screenheight = 1
+  // TODO: separate grid calcs for window resizes
+  const aspect = window.innerWidth / window.innerHeight
+  const screenwidth = 1 * aspect
+  const screenheight = 1
+  const letterheight = screenheight / 2
+  const letterwidth = screenwidth / 5
+  const firstrow = screenheight / 2 - letterheight / 2
+  const secondrow = firstrow - letterheight
+
+  const getScreenStartW = () => -(screenwidth / 2)
+  const getScreenStartY = () => screenheight / 2
+
+  const lerpVec3 = (a: THREE.Vector3, b: THREE.Vector3, t: number): THREE.Vector3 => {
+    const start = new THREE.Vector3().copy(a)
+    const end = new THREE.Vector3().copy(b)
+    return start.add(end.sub(start).multiplyScalar(t))
+  }
+
+  const easeOutQuart = (x: number): number => {
+    return 1 - Math.pow(1 - x, 4)
+  }
+
+  const xyToIndex = (x: number, y: number): number => {
+    return y * 5 + x
+  }
+
+  const indexToXy = (index: number): [number, number] => {
+    return [index % 5, index <= 4 ? 0 : 1]
+  }
+
+  const onWindowResize = () => {
+    camera.aspect = window.innerWidth / window.innerHeight
+    camera.updateProjectionMatrix()
+
+    renderer.setSize(window.innerWidth, window.innerHeight)
+  }
+
+  const onDocumentMouseMove = (event: MouseEvent) => {
+    event.preventDefault()
+
+    mouse.x = (event.clientX / window.innerWidth) * 2 - 1
+    mouse.y = -(event.clientY / window.innerHeight) * 2 + 1
+  }
+
+  const prepNewAnimation = () => {
+    transitionProgress = 0
+    intersect._targetScale.set(4.2, 1.7, 1)
+    let runningX = getScreenStartW()
+    console.log(runningX, 'running x')
+
+    objects.forEach((obj, index) => {
+      if (obj !== intersect) {
+        const w = obj._order[0] === intersect._order[0] ? intersect._targetScale.x : (5 - intersect._targetScale.x) / 4
+        const h = obj._order[1] === intersect._order[1] ? intersect._targetScale.y : 2 - intersect._targetScale.y
+        obj._targetScale.set(w, h, 1)
+        console.log(`target scale for ${obj._letter} is ${obj._targetScale.x}:${obj._targetScale.y}`)
+      }
+
+      debugger
+      if (index === 5) runningX = getScreenStartW()
+      const currentW = runningX + (obj._targetScale.x * obj.geometry.parameters.width) / 2
+      runningX += obj._targetScale.x * obj.geometry.parameters.width
+
+      let currentY
+      if (index <= 4) {
+        // WONT WORK WITH NON PLANES
+        currentY = getScreenStartY() - (obj._targetScale.y * obj.geometry.parameters.height) / 2
+      } else {
+        currentY = -screenheight / 2 + (obj._targetScale.y * obj.geometry.parameters.height) / 2
+      }
+      obj._targetPos = new THREE.Vector3(currentW, currentY, 0)
+    })
+    console.log(objects)
+  }
+
+  const setIntersect = () => {
+    if (mouseInScreen) {
+      raycaster.setFromCamera(mouse, camera)
+
+      const intersects = raycaster.intersectObjects(scene.children, false)
+
+      if (intersects.length > 0 && (intersects[0].object as enrichedMesh) !== intersect) {
+        intersect = intersects[0].object as enrichedMesh
+
+        prepNewAnimation()
+      }
+    }
+  }
+
+  const modifyIntersect = () => {
+    if (transitionProgress < 1 && mouseInScreen) {
+      const tickProgress = clock.getDelta() / TRANS_DURATION
+      if (transitionProgress <= 1) transitionProgress += Math.min(tickProgress, 1 - tickProgress)
+      const easedProgress = easeOutQuart(transitionProgress)
+
+      objects.forEach((obj: enrichedMesh) => {
+        obj.scale.copy(lerpVec3(obj.scale, obj._targetScale, easedProgress))
+        obj.position.copy(lerpVec3(obj.position, obj._targetPos, easedProgress))
+      })
+    }
+  }
+
+  const onMouseEnter = (event: MouseEvent) => {
+    event.stopPropagation()
+    mouseInScreen = true
+  }
+
+  const onMouseLeave = (event: MouseEvent) => {
+    event.stopPropagation()
+    mouseInScreen = false
+  }
+
+  const animate = () => {
+    setIntersect()
+    modifyIntersect()
+
+    renderer.render(scene, camera)
+  }
+
+  const init = () => {
     const fov = 50
     camera = new THREE.PerspectiveCamera(fov, aspect, 0.1, 100)
     const newz = 0.5 / Math.tan(((fov / 2.0) * Math.PI) / 180.0)
@@ -25,26 +154,27 @@
     scene = new THREE.Scene()
 
     const letters = 'houseofgod'.split('')
-    const objects = []
-    const letterheight = screenheight / 2
-    const letterwidth = screenwidth / 5
-    const firstrow = screenheight / 2 - letterheight / 2
-    const secondrow = firstrow - letterheight
 
     letters.forEach((letter, index) => {
-      console.log(letter)
-      console.log(index)
-      console.log('----')
       const texture = new THREE.TextureLoader().load(`src/components/${letter}.jpg`)
       texture.colorSpace = THREE.SRGBColorSpace
       const geometry = new THREE.PlaneGeometry(letterwidth, letterheight)
       const material = new THREE.MeshBasicMaterial({ map: texture })
-      mesh = new THREE.Mesh(geometry, material)
-      scene.add(mesh)
-      objects.push(mesh)
-      mesh.position.x = -(screenwidth / 2) + letterwidth * (index % 5) + letterwidth / 2
-      mesh.position.y = index <= 4 ? firstrow : secondrow
+      const order: THREE.Vector2Tuple = indexToXy(index)
+      const mesh = new THREE.Mesh(geometry, material)
+      mesh.position.x = -(screenwidth / 2) + letterwidth * order[0] + letterwidth / 2
+      mesh.position.y = order[1] ? secondrow : firstrow
+      const emesh = Object.assign(mesh, {
+        _order: order,
+        _letter: letter,
+        _targetScale: new THREE.Vector3(1),
+        _targetPos: new THREE.Vector3().copy(mesh.position),
+      })
+      scene.add(emesh)
+      objects[index] = emesh
     })
+
+    console.log(objects)
 
     renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
     renderer.setPixelRatio(window.devicePixelRatio)
@@ -53,21 +183,16 @@
     const canvas = document.querySelector('#canvas-container')!
     canvas.appendChild(renderer.domElement)
 
+    raycaster = new THREE.Raycaster()
+
+    document.addEventListener('mouseenter', onMouseEnter)
+    document.addEventListener('mouseleave', onMouseLeave)
+    document.addEventListener('mousemove', onDocumentMouseMove)
+    // document.addEventListener('click', setIntersect)
     window.addEventListener('resize', onWindowResize)
   }
 
-  function onWindowResize() {
-    camera.aspect = window.innerWidth / window.innerHeight
-    camera.updateProjectionMatrix()
-
-    renderer.setSize(window.innerWidth, window.innerHeight)
-  }
-
-  function animate() {
-    // mesh.rotation.x += 0.005
-    // mesh.rotation.y += 0.01
-    renderer.render(scene, camera)
-  }
+  init()
 </script>
 
 <style>
